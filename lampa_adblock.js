@@ -4,7 +4,8 @@
   if (window.__lampaAdBlockInstalled) return;
   window.__lampaAdBlockInstalled = true;
 
-  var VERSION = '1.0.1';
+  var VERSION = '1.1.0';
+  var PLUGIN_URL = document.currentScript && document.currentScript.src ? document.currentScript.src : '';
   var EMPTY_JSON_URL = 'data:application/json;charset=utf-8,%7B%7D';
   var defaults = {
     lampa_adblock_enabled: true,
@@ -20,6 +21,12 @@
     description: 'Блокировка рекламных запросов, VAST/VMAP и баннеров',
     component: 'lampa_adblock'
   };
+
+  function registerManifest() {
+    if (window.__lampaAdBlockManifestAdded || !window.Lampa || !Lampa.Manifest) return;
+    window.__lampaAdBlockManifestAdded = true;
+    try { Lampa.Manifest.plugins = manifest; } catch (e) {}
+  }
 
   var blockedHosts = [
     'doubleclick.net',
@@ -282,11 +289,50 @@
     trigger('lampa_adblock_dom', 'Скрывать баннеры', 'Скрывает рекламные элементы в интерфейсе');
   }
 
+  function decoratePluginEntry() {
+    if (!PLUGIN_URL || !window.Lampa || !Lampa.Storage) return;
+    try {
+      var current = PLUGIN_URL.split('?')[0];
+      var plugins = Lampa.Storage.get('plugins', []);
+      if (!Array.isArray(plugins)) return;
+      var changed = false;
+
+      plugins.forEach(function (plugin) {
+        if (!plugin || typeof plugin !== 'object' || !plugin.url) return;
+        if (String(plugin.url).split('?')[0] !== current) return;
+        if (plugin.name !== 'Lampa AdBlock') { plugin.name = 'Lampa AdBlock'; changed = true; }
+        if (plugin.author !== '@Koichi-gash') { plugin.author = '@Koichi-gash'; changed = true; }
+        if (plugin.descr !== 'Блокировка рекламы и рекламных вставок') {
+          plugin.descr = 'Блокировка рекламы и рекламных вставок';
+          changed = true;
+        }
+      });
+
+      if (changed) Lampa.Storage.set('plugins', plugins);
+    } catch (e) {}
+  }
+
+  function addMainMenu() {
+    if (!window.Lampa || !Lampa.Menu || typeof Lampa.Menu.addButton !== 'function') return;
+    if (document.querySelector && document.querySelector('.lampa-adblock-menu')) return;
+
+    var icon = '<svg viewBox="0 0 24 24" width="24" height="24" fill="none"><path d="M12 2l8 4v6c0 5-3.4 9-8 10-4.6-1-8-5-8-10V6l8-4z" stroke="currentColor" stroke-width="2"/><path d="M8 12h8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+    var button = Lampa.Menu.addButton(icon, 'AdBlock', function () {
+      if (Lampa.Settings && typeof Lampa.Settings.create === 'function') {
+        Lampa.Settings.create('lampa_adblock');
+      }
+    });
+
+    if (button && typeof button.addClass === 'function') button.addClass('lampa-adblock-menu');
+    else if (button && button.classList) button.classList.add('lampa-adblock-menu');
+  }
+
   function install() {
     if (window.__lampaAdBlockStarted || !window.Lampa || !Lampa.Storage) return;
     window.__lampaAdBlockStarted = true;
-    try { Lampa.Manifest.plugins = manifest; } catch (e) {}
     addSettings();
+    decoratePluginEntry();
+    addMainMenu();
     patchPlayer();
     patchBrowserNetwork();
     patchDom();
@@ -303,6 +349,9 @@
       setTimeout(bootstrap, 250);
       return;
     }
+
+    // Манифест безопасно регистрируется сразу, чтобы Lampa показала имя плагина.
+    registerManifest();
 
     // Не вмешиваемся в сеть и DOM, пока сама Lampa полностью не запустилась.
     if (window.appready) {
